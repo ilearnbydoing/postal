@@ -16,11 +16,11 @@ fi
 if [ $SHOULD_SUDO == "yes" ] && [ $USER != "postal" ]; then
     run() {
         HOME=/opt/postal
-        eval "sudo -u postal $1"
+        eval "sudo -u postal $@"
     }
 else
     run() {
-        eval $1
+        eval $@
     }
 fi
 
@@ -53,7 +53,13 @@ case "$1" in
         ;;
 
     upgrade)
-        run "bundle exec rake assets:precompile db:migrate"
+        if [ ! -f "public/assets/.prebuilt" ]; then
+            echo 'Compiling Assets'
+            export RAILS_GROUPS=assets
+            run "bundle exec rake assets:precompile"
+        fi
+        echo 'Migrating database'
+        run "bundle exec rake db:migrate"
         ;;
 
     console)
@@ -65,7 +71,13 @@ case "$1" in
         ;;
 
     initialize)
-        run "bundle exec rake assets:precompile db:schema:load db:seed"
+        echo 'Initializing database'
+        run "bundle exec rake db:schema:load db:seed"
+        if [ ! -f "public/assets/.prebuilt" ]; then
+            echo 'Compiling Assets'
+            export RAILS_GROUPS=assets
+            run "bundle exec rake assets:precompile"
+        fi
         ;;
 
     default-dkim-record)
@@ -77,12 +89,25 @@ case "$1" in
         ;;
 
     auto-upgrade)
-        run "ruby script/auto_upgrade.rb"
+        run "ruby script/auto_upgrade.rb $@"
+        ;;
+
+    make-user)
+        run "bundle exec ruby script/make_user.rb"
+        ;;
+
+    test-app-smtp)
+        run "bundle exec ruby script/test_app_smtp.rb $2"
         ;;
 
     bundle)
         if [ -n "$2" ]; then
-          run "bundle install --path=$2 --without=development --jobs=4 --clean"
+            if [ -f "public/assets/.prebuilt" ]; then
+                # If there are prebuilt assets, don't install the asset gems
+                run "bundle install --path=$2 --jobs=2 --clean --without=development assets"
+            else
+                run "bundle install --path=$2 --jobs=2 --clean --without=development"
+            fi
         else
           echo "usage: $0 bundle path/to/vendor/dir"
           exit 1
@@ -111,5 +136,6 @@ case "$1" in
         echo -e " * \e[35mregister-lets-encrypt\e[0m - register the generated Let's Encrypt key"
         echo -e " * \e[35mupgrade\e[0m - upgrade the Postal installation"
         echo -e " * \e[35mbundle\e[0m - download & install all required Ruby dependencies"
+        echo -e " * \e[35mmake-user\e[0m - create a new admin user"
         echo
 esac

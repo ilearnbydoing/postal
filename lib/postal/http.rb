@@ -38,11 +38,11 @@ module Postal
       end
 
       if options[:sign]
-        #signature = EncryptoSigno.sign(Postal.signing_key, request.body.to_s).gsub("\n", '')
-        #request.add_field 'X-Postal-Signature', signature
+        signature = EncryptoSigno.sign(Postal.signing_key, request.body.to_s).gsub("\n", '')
+        request.add_field 'X-Postal-Signature', signature
       end
 
-      request['User-Agent'] = options[:user_agent] || "Postal/#{Postal::VERSION}"
+      request['User-Agent'] = options[:user_agent] || "Postal/#{Postal.version}"
 
       connection = Net::HTTP.new(uri.host, uri.port)
 

@@ -10,7 +10,8 @@ controller :send do
     param :to, "The e-mail addresses of the recipients (max 50)", :type => Array
     param :cc, "The e-mail addresses of any CC contacts (max 50)", :type => Array
     param :bcc, "The e-mail addresses of any BCC contacts (max 50)", :type => Array
-    param :from, "The e-mail address of the sender", :type => String
+    param :from, "The e-mail address for the From header", :type => String
+    param :sender, "The e-mail address for the Sender header", :type => String
     param :subject, "The subject of the e-mail", :type => String
     param :tag, "The tag of the e-mail", :type => String
     param :reply_to, "Set the reply-to address for the mail", :type => String
@@ -32,7 +33,7 @@ controller :send do
     error 'AttachmentMissingData', "An attachment is missing data"
     # Return
     returns Hash
-    # Action
+    # Action
     action do
       attributes = {}
       attributes[:to] = params.to
@@ -86,7 +87,7 @@ controller :send do
         error 'UnauthenticatedFromAddress'
       end
 
-      # Store the result ready to return
+      # Store the result ready to return
       result = {:message_id => nil, :messages => {}}
       params.rcpt_to.uniq.each do |rcpt_to|
         message = identity.server.message_db.new_message

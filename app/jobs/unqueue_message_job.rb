@@ -51,7 +51,7 @@ class UnqueueMessageJob < Postal::Job
             end
 
             # We might not be able to send this any more, check the attempts
-            if queued_message.attempts >= QueuedMessage::MAX_ATTEMPTS
+            if queued_message.attempts >= Postal.config.general.maximum_delivery_attempts
               details = "Maximum number of delivery attempts (#{queued_message.attempts}) has been reached."
               if queued_message.message.scope == 'incoming'
                 # Send bounceds to incoming e-mails when they are hard failed
@@ -142,6 +142,15 @@ class UnqueueMessageJob < Postal::Job
                 log "#{log_prefix} Message has a spam score higher than the server's maxmimum. Hard failing."
                 queued_message.message.create_delivery('HardFail', :details => "Message's spam score is higher than the failure threshold for this server. Threshold is currently #{queued_message.server.spam_failure_threshold}.")
                 queued_message.destroy
+                next
+              end
+
+              # If the server is in development mode, hold it
+              if queued_message.server.mode == 'Development' && !queued_message.manual?
+                log "Server is in development mode so holding."
+                queued_message.message.create_delivery('Held', :details => "Server is in development mode.")
+                queued_message.destroy
+                log "#{log_prefix} Server is in development mode. Holding."
                 next
               end
 
@@ -355,7 +364,7 @@ class UnqueueMessageJob < Postal::Job
 
               # If the server is in development mode, hold it
               if queued_message.server.mode == 'Development' && !queued_message.manual?
-                log "Server is in development mode and this is a outgoing message so holding."
+                log "Server is in development mode so holding."
                 queued_message.message.create_delivery('Held', :details => "Server is in development mode.")
                 queued_message.destroy
                 log "#{log_prefix} Server is in development mode. Holding."
@@ -421,7 +430,7 @@ class UnqueueMessageJob < Postal::Job
               Raven.capture_exception(e, :extra => {:job_id => self.id, :server_id => queued_message.server_id, :message_id => queued_message.message_id})
             end
             if queued_message.message
-              queued_message.message.create_delivery("Error", :details => "An internal error occurred while sending this message. This message will be retried automatically. This this persists, contact support for assistance.", :output => "#{e.class}: #{e.message}", :log_id => "J-#{self.id}")
+              queued_message.message.create_delivery("Error", :details => "An internal error occurred while sending this message. This message will be retried automatically. If this persists, contact support for assistance.", :output => "#{e.class}: #{e.message}", :log_id => "J-#{self.id}")
             end
           end
         end

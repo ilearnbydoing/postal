@@ -2,6 +2,7 @@ require 'yaml'
 require 'pathname'
 require 'cgi'
 require 'openssl'
+require 'fileutils'
 require_relative 'error'
 require_relative 'version'
 
@@ -35,10 +36,22 @@ module Postal
     @config_root ||= begin
       if __FILE__ =~ /\A\/opt\/postal/
         Pathname.new("/opt/postal/config")
-      elsif ENV['AM_CONFIG_ROOT']
-        Pathname.new(ENV['AM_CONFIG_ROOT'])
+      elsif ENV['POSTAL_CONFIG_ROOT']
+        Pathname.new(ENV['POSTAL_CONFIG_ROOT'])
       else
         Pathname.new(File.expand_path("../../../config", __FILE__))
+      end
+    end
+  end
+
+  def self.log_root
+    @log_root ||= begin
+      if config.logging.root
+        Pathname.new(config.logging.root)
+      elsif __FILE__ =~ /\/opt\/postal/
+        Pathname.new("/opt/postal/log")
+      else
+        app_root.join('log')
       end
     end
   end
@@ -61,7 +74,7 @@ module Postal
 
   def self.database_url
     if config.main_db
-      "mysql2://#{CGI.escape(config.main_db.username.to_s)}:#{CGI.escape(config.main_db.password.to_s)}@#{config.main_db.host}:#{config.main_db.port}/#{config.main_db.database}?reconnect=true&encoding=#{config.main_db.encoding || 'utf8mb4'}"
+      "mysql2://#{CGI.escape(config.main_db.username.to_s)}:#{CGI.escape(config.main_db.password.to_s)}@#{config.main_db.host}:#{config.main_db.port}/#{config.main_db.database}?reconnect=true&encoding=#{config.main_db.encoding || 'utf8mb4'}&pool=#{config.main_db.pool_size}"
     else
       "mysql2://root@localhost/postal"
     end
@@ -74,7 +87,8 @@ module Postal
       if config.logging.stdout || ENV['LOG_TO_STDOUT']
         Postal::AppLogger.new(name, STDOUT)
       else
-        Postal::AppLogger.new(name, app_root.join('log', "#{name}.log"), config.logging.max_log_files || 10, (config.logging.max_log_file_size || 20).megabytes)
+        FileUtils.mkdir_p(log_root)
+        Postal::AppLogger.new(name, log_root.join("#{name}.log"), config.logging.max_log_files, config.logging.max_log_file_size.megabytes)
       end
     end
   end
@@ -103,16 +117,16 @@ module Postal
     config.smtp&.from_address || "postal@example.com"
   end
 
+  def self.smtp_private_key_path
+    config.smtp_server.tls_private_key_path || config_root.join('smtp.key')
+  end
+
   def self.smtp_private_key
     @smtp_private_key ||= OpenSSL::PKey::RSA.new(File.read(smtp_private_key_path))
   end
 
-  def self.smtp_private_key_path
-    config_root.join('smtp.key')
-  end
-
   def self.smtp_certificate_path
-    config_root.join('smtp.cert')
+    config.smtp_server.tls_certificate_path || config_root.join('smtp.cert')
   end
 
   def self.smtp_certificate_data
@@ -122,6 +136,31 @@ module Postal
   def self.smtp_certificates
     @smtp_certificates ||= begin
       certs = self.smtp_certificate_data.scan(/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/m)
+      certs.map do |c|
+        OpenSSL::X509::Certificate.new(c)
+      end.freeze
+    end
+  end
+
+  def self.fast_server_default_private_key_path
+    config.fast_server.default_private_key_path || config_root.join('fast_server.key')
+  end
+
+  def self.fast_server_default_private_key
+    @fast_server_default_private_key ||= OpenSSL::PKey::RSA.new(File.read(fast_server_default_private_key_path))
+  end
+
+  def self.fast_server_default_certificate_path
+    config.fast_server.default_tls_certificate_path || config_root.join('fast_server.cert')
+  end
+
+  def self.fast_server_default_certificate_data
+    @fast_server_default_certificate_data ||= File.read(fast_server_default_certificate_path)
+  end
+
+  def self.fast_server_default_certificates
+    @fast_server_default_certificates ||= begin
+      certs = self.fast_server_default_certificate_data.scan(/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/m)
       certs.map do |c|
         OpenSSL::X509::Certificate.new(c)
       end.freeze
@@ -151,14 +190,6 @@ module Postal
   def self.check_config!
     unless File.exist?(self.config_file_path)
       raise ConfigError, "No config found at #{self.config_file_path}"
-    end
-
-    unless File.exist?(self.smtp_private_key_path)
-      raise ConfigError, "No SMTP private key found at #{self.smtp_private_key_path}"
-    end
-
-    unless File.exist?(self.smtp_certificate_path)
-      raise ConfigError, "No SMTP certificate found at #{self.smtp_certificate_path}"
     end
 
     unless File.exists?(self.lets_encrypt_private_key_path)

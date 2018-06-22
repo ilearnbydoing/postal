@@ -11,6 +11,8 @@ web:
 general:
   use_ip_pools: false
   exception_url:
+  maximum_delivery_attempts: 18
+  use_local_ns_for_domains: false
 
 web_server:
   bind_address: 127.0.0.1
@@ -19,10 +21,17 @@ web_server:
 
 fast_server:
   enabled: false
-  bind_address: 0.0.0.0
-  port: 5010
-  ssl_port: 5011
+  bind_address:
+    # Set appropriate IP addresses to listen on. These should be dedicated IP
+    # addresses just used for this server. You should list IPv4 and IPv6 addresses
+    # as appropriate.
+    # - 1.2.3.4
+    # - abcd:a:b:c:d::1
+  port: 80
+  ssl_port: 443
   proxy_protocol: false
+  default_private_key_path: # Defaults to config/fast_server.key
+  default_tls_certificate_path: # Defaults to config/fast_server.cert
 
 main_db:
   host: 127.0.0.1
@@ -30,11 +39,16 @@ main_db:
   username: postal
   password:
   database: postal
+  pool_size: 5
 
 logging:
   stdout: false
+  root: # Automatically determined based on config root
   max_log_file_size: 20
   max_log_files: 10
+  greylog:
+    host:
+    port: 12201
 
 message_db:
   host: 127.0.0.1
@@ -52,13 +66,25 @@ rabbitmq:
 
 workers:
   quantity: 1
+  threads: 4
 
 smtp_server:
+  port: 25
+  tls_enabled: false
+  tls_certificate_path: # Defaults to config/smtp.cert
+  tls_private_key_path: # Defaults to config/smtp.key
+  tls_ciphers:
+  ssl_version: SSLv23
   proxy_protocol: false
   log_connect: true
-  evented: true
-  ports:
-    - 2525
+  strip_received_headers: false
+  max_message_size: 14 # size in Megabytes
+
+smtp_relays:
+  -
+    hostname:
+    port: 25
+    ssl_mode: Auto
 
 dns:
   mx_records:
@@ -75,7 +101,7 @@ dns:
 
 smtp:
   host: 127.0.0.1
-  port: 2525
+  port: 25
   username: # Complete when Postal is running and you can
   password: # generate the credentials within the interface.
   from_name: Postal
@@ -84,3 +110,17 @@ smtp:
 rails:
   environment: production
   secret_key:
+
+spamd:
+  enabled: false
+  host: 127.0.0.1
+  port: 783
+
+clamav:
+  enabled: false
+  host: 127.0.0.1
+  port: 2000
+
+smtp_client:
+  open_timeout: 30
+  read_timeout: 60
